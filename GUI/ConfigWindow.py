@@ -1,9 +1,10 @@
-import cv2
+import numpy as np
 from PySide2.QtWidgets import QApplication, QMainWindow, QGraphicsView, QGraphicsScene, QLabel, QPushButton, \
     QVBoxLayout, QWidget, QGraphicsItem, QListWidgetItem, QListWidget, QHBoxLayout, QSizePolicy, QListView, \
     QAbstractItemView
 from PySide2.QtGui import QPixmap, QImage, QColor, QPen, QRadialGradient, QBrush
 from PySide2.QtCore import Qt, QRectF
+import cv2
 
 
 class PixelItem(QGraphicsItem):
@@ -15,6 +16,8 @@ class PixelItem(QGraphicsItem):
         self.selected = False
         self.pixel_scale = pixel_scale
 
+        self.keypoint = False
+
     def boundingRect(self):
         return QRectF(self.x, self.y, self.pixel_scale, self.pixel_scale)
 
@@ -24,11 +27,15 @@ class PixelItem(QGraphicsItem):
         painter.fillRect(scaled_rect, self.color)
 
         # 如果选中状态为 True，则绘制外边框
-        if self.selected:
+        if self.keypoint:
+            if self.selected:
+                color = Qt.red
+            else:
+                color = Qt.gray
             # 定义渐变
             gradient = QRadialGradient(scaled_rect.center(), self.pixel_scale / 2)
             gradient.setColorAt(0, QColor(Qt.transparent))
-            gradient.setColorAt(0.5, QColor(Qt.green))
+            gradient.setColorAt(0.5, QColor(color))
             gradient.setColorAt(1, QColor(Qt.transparent))
 
             # 设置画笔和渐变
@@ -52,6 +59,10 @@ class PixelItem(QGraphicsItem):
         self.selected = selected
         self.update()
 
+    def setKeypoint(self, keypoint):
+        self.keypoint = keypoint
+        self.update()
+
 
 class ImageViewer(QGraphicsView):
     def __init__(self, pixel_scale=16):
@@ -65,40 +76,12 @@ class ImageViewer(QGraphicsView):
         self.setScene(self.scene)
 
         self.scroll_factor = pixel_scale / 10
-        self.selected_row_lines = [None, None]  # 用于存储被选中的行
-        self.selected_pixel = None  # 用于存储被选中的像素
-        self.previous_selected_pixel = None  # 用于存储之前被选中的像素
         self.pixel_scale = pixel_scale  # 像素放大倍率
-        self.row_analysis = True  # 是否进行行分析
-        self.process = 0
 
-    def drawRowBoundaries(self):
-        if self.selected_row_lines is not None and not self.process:
-            pen = QPen(QColor(200, 0, 0))
-            x = self.selected_pixel.x
-            y = self.selected_pixel.y
-            if self.selected_row_lines:
-                self.scene.removeItem(self.selected_row_lines[0])
-                self.scene.removeItem(self.selected_row_lines[1])
-                self.selected_row_lines.clear()
-
-            if self.row_analysis:
-                # 绘制行边界
-                self.selected_row_lines.append(
-                    self.scene.addLine(0, y, self.image_shape[1] * self.pixel_scale,
-                                       y, pen))  # 绘制上边界
-                self.selected_row_lines.append(
-                    self.scene.addLine(0, y + self.pixel_scale, self.image_shape[1] * self.pixel_scale,
-                                       y + self.pixel_scale, pen))  # 绘制下边界
-
-            else:
-                # 绘制列边界
-                self.selected_row_lines.append(
-                    self.scene.addLine(x, 0, x,
-                                       self.image_shape[0] * self.pixel_scale, pen))  # 绘制左边界
-                self.selected_row_lines.append(
-                    self.scene.addLine(x + self.pixel_scale, 0, x + self.pixel_scale,
-                                       self.image_shape[0] * self.pixel_scale, pen))  # 绘制右边界
+        self.sift = cv2.SIFT_create(nfeatures=0, nOctaveLayers=3, contrastThreshold=0.005)
+        self.keypoints = None
+        self.keypoints_info = {}
+        self.descriptors = None
 
     def draw_image(self):
         image = self.segmentations[self.index]["image"]
@@ -127,10 +110,6 @@ class ImageViewer(QGraphicsView):
         self.translate(dx, dy)
 
     def switch_image(self, index):
-        # 重置对之前图像项的引用
-        self.selected_row_lines = [None, None]
-        self.selected_pixel = None
-        self.previous_selected_pixel = None
 
         # 设置新的图像索引
         self.index = index
@@ -138,15 +117,16 @@ class ImageViewer(QGraphicsView):
         # 绘制新的图像
         self.draw_image()
 
+        # 更新关键点
+        self.reset_keypoints()
+
         # 重设缩放大小
         self.resetTransform()
 
-    def start(self, segmentations, row_analysis):
+    def start(self, segmentations):
         self.segmentations = segmentations
-        self.row_analysis = row_analysis
-        self.process = 0
 
-        self.switch_image(self.index)
+        self.switch_image(0)
 
     def wheelEvent(self, event):
         modifiers = QApplication.keyboardModifiers()
@@ -157,38 +137,20 @@ class ImageViewer(QGraphicsView):
         else:
             super().wheelEvent(event)
 
-    def scrollContentsBy(self, dx: int, dy: int):
-        super().scrollContentsBy(dx, dy)
-        if self.selected_row_lines and not self.process:
-            self.scene.removeItem(self.selected_row_lines[0])
-            self.scene.removeItem(self.selected_row_lines[1])
-            self.selected_row_lines.clear()
-
     def mousePressEvent(self, event):
         item = self.find_item_with_event_pos(event.pos())
         if item is None:
             return
 
-        # 之前选中的像素的标记
-        if self.selected_pixel:
-            if self.previous_selected_pixel is None and self.process:
-                self.previous_selected_pixel = self.selected_pixel
-            else:
-                self.selected_pixel.setSelected(False)
+        x = item.x
+        y = item.y
 
-        if self.process:
-            # 另选一个像素
-            if self.row_analysis:
-                x = item.x
-                y = self.previous_selected_pixel.y
-            else:
-                y = item.y
-                x = self.previous_selected_pixel.x
-            self.selected_pixel = self.find_item_with_pixel_pos((x, y))
-        else:
-            self.selected_pixel = item
-        self.selected_pixel.setSelected(True)
-        self.drawRowBoundaries()
+        keypoint, key_item, pos, selected = self.find_key_with_pixel_pos((x, y))
+        if keypoint is None:
+            return
+
+        key_item.setSelected(not selected)
+        self.keypoints_info[pos]["selected"] = not selected
 
     def find_item_with_event_pos(self, pos):
         items = self.items(pos)
@@ -210,37 +172,67 @@ class ImageViewer(QGraphicsView):
         relative_y = pos[1] - self.verticalScrollBar().value()
         return relative_x, relative_y
 
+    def reset_keypoints(self):
+        image = self.segmentations[self.index]["image"]
+        keypoints, descriptors = self.sift.detectAndCompute(image, None)
+        self.keypoints = keypoints
+        self.descriptors = descriptors
+
+        self.keypoints_info = {}
+        for keypoint in keypoints:
+            x, y = keypoint.pt
+            x = int(x) * self.pixel_scale
+            y = int(y) * self.pixel_scale
+            item = self.find_item_with_pixel_pos((x, y))
+            self.keypoints_info[(x, y)] = {
+                "keypoint": keypoint,
+                "selected": True
+            }
+
+            item.setKeypoint(True)
+            item.setSelected(True)
+
+    def find_key_with_pixel_pos(self, pos):
+        x, y = pos
+        x = x // self.pixel_scale
+        y = y // self.pixel_scale
+        for keypoint in self.keypoints:
+            if abs(keypoint.pt[0] - x) < 1.5 and abs(keypoint.pt[1] - y) < 1.5:
+                pixel_pos = (int(keypoint.pt[0]) * self.pixel_scale, int(keypoint.pt[1]) * self.pixel_scale)
+                item = self.find_item_with_pixel_pos(pixel_pos)
+                return keypoint, item, pixel_pos, item.selected
+        return None, None, None, None
+
     def return_config(self):
-        start = self.segmentations[self.index]["start"]
+        selected_keypoints = []
+        descriptors = []  # 使用列表存储描述符向量
+        for i, keypoint in enumerate(self.keypoints):
+            x, y = keypoint.pt
+            x = int(x) * self.pixel_scale
+            y = int(y) * self.pixel_scale
+            if self.keypoints_info[(x, y)]["selected"]:
+                selected_keypoints.append(keypoint)
+                descriptors.append(self.descriptors[i])  # 将描述符添加到列表中
 
-        x1 = self.previous_selected_pixel.x // self.pixel_scale + start[0]
-        y1 = self.previous_selected_pixel.y // self.pixel_scale + start[1]
-        x2 = self.selected_pixel.x // self.pixel_scale + start[0]
-        y2 = self.selected_pixel.y // self.pixel_scale + start[1]
+        # 将描述符列表转换为 numpy 数组
+        descriptors = np.array(descriptors)
 
-        if self.row_analysis:
-            config = {
-                "index": self.index,
-                "position": y1,
-                "left_edge": x1,
-                "right_edge": x2
-            }
-
-        else:
-            config = {
-                "index": self.index,
-                "position": x1,
-                "left_edge": y1,
-                "right_edge": y2
-            }
-
+        segmentation = self.segmentations[self.index]
+        height, width, _ = segmentation["image"].shape
+        start_x, start_y = segmentation["start"]
+        region = [start_x, start_y, width, height]
+        config = {
+            "ROI": region,
+            "seg_index": self.index,
+            "keypoints": selected_keypoints,
+            "descriptors": descriptors
+        }
         return config
 
 
 class ConfigWindow(QMainWindow):
     def __init__(self, pixel_scale=8, mainWindow=None):
         super().__init__()
-        self.row_analysis = True
         self.parent = mainWindow
         self.pixel_scale = pixel_scale
         self.setWindowTitle("边缘位置选取")
@@ -256,7 +248,7 @@ class ConfigWindow(QMainWindow):
         self.setCentralWidget(self.image_viewer)
 
         # 添加显示文字的标签
-        self.label = QLabel("选择边缘", self)
+        self.label = QLabel("选择特征点（红色：已选中；灰色：未选中）", self)
         self.label.setAlignment(Qt.AlignCenter)
         self.label.setFixedSize(400, 30)
 
@@ -266,7 +258,7 @@ class ConfigWindow(QMainWindow):
         self.label.setMinimumWidth(400)  # 设置标签的最小宽度
 
         # 添加确认按钮
-        self.confirm_button = QPushButton("下一步", self)
+        self.confirm_button = QPushButton("完成", self)
         self.confirm_button.setFixedSize(150, 50)
         self.confirm_button.clicked.connect(self.confirm_click)
 
@@ -324,43 +316,21 @@ class ConfigWindow(QMainWindow):
         if change:
             self.setFixedSize(window_width, window_height)
 
-    def set_prompt(self):
-        if self.image_viewer.process == 0:
-            if self.row_analysis:
-                self.label.setText("请点击选择左端点")
-            else:
-                self.label.setText("请点击选择上端点")
-            self.confirm_button.setText("下一步")
-        else:
-            if self.row_analysis:
-                self.label.setText("请点击选择右端点")
-            else:
-                self.label.setText("请点击选择下端点")
-            self.confirm_button.setText("完成")
-
-    def start(self, segmentations, row_analysis):
-        self.row_analysis = row_analysis
-        self.image_viewer.process = 0
+    def start(self, segmentations):
         shape = segmentations[0]["image"].shape
         self.set_window_size(shape)
-        self.set_prompt()
 
         self.show_thumbnails(segmentations)
 
-        self.image_viewer.start(segmentations, row_analysis)
+        self.image_viewer.start(segmentations)
 
         self.show()
 
     def confirm_click(self):
-        if self.image_viewer.process == 0:
-            self.image_viewer.process = 1
-            self.set_prompt()
+        config = self.image_viewer.return_config()
+        self.parent.import_config(config)
 
-        else:
-            config = self.image_viewer.return_config()
-            self.parent.import_config(config, self.row_analysis)
-
-            self.hide()
+        self.hide()
 
     def show_thumbnails(self, segmentations):
         # 清空缩略图列表
@@ -401,9 +371,6 @@ class ConfigWindow(QMainWindow):
 
         if self.image_viewer.index != index:
             self.thumbnail_set_selected_style(item)
-            # 更新标签
-            self.image_viewer.process = 0
-            self.set_prompt()
             # 切换到对应图像
             self.image_viewer.switch_image(index)
 
@@ -425,14 +392,4 @@ class ConfigWindow(QMainWindow):
 
 
 if __name__ == "__main__":
-    class Main:
-        def import_config(self, config, row_analysis):
-            print(config)
-
-
-    app = QApplication([])
-    main = Main()
-    image = cv2.imread("resources/add_template.png")
-    window = ConfigWindow(8, mainWindow=main)
-    window.start(image, True)
-    app.exec_()
+    pass

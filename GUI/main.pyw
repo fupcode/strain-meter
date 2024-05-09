@@ -33,13 +33,15 @@ class MainWindow:
         self.ui.graphicsView_figure.setScene(self.scene_figure)
 
         self.config = None
-        self.row_analysis = True
         self.history_path = None
 
         self.template = None
         self.samples = []
         self.data = None
+
         self.seg_index = None
+        self.keypoints = None
+        self.descriptors = None
 
         self.setup_callbacks()
         self.show_sample()
@@ -57,21 +59,9 @@ class MainWindow:
         self.ui.tree.setColumnWidth(2, 88)
         self.ui.tree.setColumnWidth(3, 88)
 
-        self.ui.spinBox_position.setMaximum(999)
-        self.ui.spinBox_edge1.setMaximum(999)
-        self.ui.spinBox_edge2.setMaximum(999)
-        self.ui.spinBox_width.setMaximum(999)
-
-        self.ui.spinBox_position_2.setMaximum(999)
-        self.ui.spinBox_edge1_2.setMaximum(999)
-        self.ui.spinBox_edge2_2.setMaximum(999)
-        self.ui.spinBox_width_2.setMaximum(999)
-
     def setup_callbacks(self):
         self.scene_sample.mousePressEvent = self.mousePressEventLoadSample
 
-        self.ui.groupBox_row.toggled.connect(self.row_switch)
-        self.ui.groupBox_col.toggled.connect(self.col_switch)
         self.ui.pushButton_analysis.clicked.connect(self.batch_analysis)
         self.ui.pushButton_template.clicked.connect(self.template_setting)
         self.ui.toolButton_add.clicked.connect(self.openFileLoadSample)
@@ -97,7 +87,7 @@ class MainWindow:
 
     def template_setting(self, button):
         segmentation_result = self.template.segmentation
-        self.config_window.start(segmentation_result, self.row_analysis)
+        self.config_window.start(segmentation_result)
 
     def batch_rename(self):
         # 询问
@@ -116,32 +106,12 @@ class MainWindow:
             self.ui.statusbar.showMessage("批量重命名完成")
 
     def batch_analysis(self, button):
-        self.value2config()
-        length = self.template.analysis(self.config, self.row_analysis)
-
-        if length == "?":
-            self.ui.statusbar.showMessage("模板分析失败：未找到边缘")
-            self.update_sample_tree()
-            return
-        elif length == "error":
-            self.ui.statusbar.showMessage("模板分析失败：未知错误")
-            self.update_sample_tree()
-            return
-        else:
-            self.ui.statusbar.showMessage(f"模板分析成功")
-
-        left_edge_x = self.template.details[1 - self.row_analysis]["left_edge_x"]
-        right_edge_x = self.template.details[1 - self.row_analysis]["right_edge_x"]
-        self.config[1 - self.row_analysis]["left_edge"] = left_edge_x
-        self.config[1 - self.row_analysis]["right_edge"] = right_edge_x
-
         for sample in self.samples:
             sample.crop_by_template(self.template.cropped_image)
-            sample.analysis(self.config, self.row_analysis)
+            sample.analysis(self.config)
 
         self.ui.statusbar.showMessage(f"样本批量分析结束")
 
-        self.config2value()
         self.update_sample_tree()
 
     def export_data(self, mode=None):
@@ -205,19 +175,6 @@ class MainWindow:
             sample.save_ROI(ROI_region, path)
 
         self.ui.statusbar.showMessage(f"ROI已保存至源图像目录下 strain_ROI 目录中")
-
-    def row_switch(self, checked):
-        self.ui.groupBox_col.setChecked(not checked)
-        self.row_col_switch(checked)
-
-    def col_switch(self, checked):
-        self.ui.groupBox_row.setChecked(not checked)
-
-    def row_col_switch(self, row_analysis):
-        print("row_analysis", row_analysis)
-        self.row_analysis = row_analysis
-
-        self.show_sample_and_figure()
 
     def mousePressEventLoadSample(self, event):
         if self.template is None and event.button() == Qt.LeftButton:
@@ -306,7 +263,7 @@ class MainWindow:
             title = sample.short_name
 
         self.show_sample(sample)
-        self.plot(sample.fig[1 - self.row_analysis])
+        self.plot()
 
         print("当前样品：", title)
         self.ui.title.setText(title)
@@ -339,14 +296,14 @@ class MainWindow:
             sample_item.setText(0, sample.short_name)
             sample_item.setText(1, sample.matching_accuracy)
 
-            if not isinstance(sample.width, str):
-                width = f"{sample.width:.1f}"
+            if not isinstance(sample.Exx, str):
+                width = f"{sample.Exx * 100:.2f} %"
             else:
-                width = sample.width
-            if not isinstance(sample.height, str):
-                height = f"{sample.height:.1f}"
+                width = sample.Exx
+            if not isinstance(sample.Eyy, str):
+                height = f"{sample.Eyy * 100:.2f} %"
             else:
-                height = sample.height
+                height = sample.Eyy
             sample_item.setText(2, width)
             sample_item.setText(3, height)
             second_item.addChild(sample_item)
@@ -385,7 +342,9 @@ class MainWindow:
             self.ui.graphicsView_sample.setScene(self.scene_sample)
         else:
             self.scene_sample.clear()
-            image = sample.mark_image(self.row_analysis)
+            image = sample.image_with_keypoints
+            if image is None:
+                image = sample.cropped_image
 
             # 获取视图和场景的大小
             view_width = self.ui.graphicsView_sample.width() - 8
@@ -510,7 +469,7 @@ class MainWindow:
         sample_paths = [sample.path for sample in self.samples]
 
         data = {
-            "config": self.config,
+            # "config": self.config,
             "history_path": self.history_path,
             "template_path": template_path,
             "sample_paths": sample_paths
@@ -521,7 +480,7 @@ class MainWindow:
     def load_temp(self):
         with open("temp/temp_project.json", "r") as f:
             data = json.load(f)
-            self.config = data["config"]
+            # self.config = data["config"]
             self.history_path = data["history_path"]
             template_path = data["template_path"]
             sample_paths = data["sample_paths"]
@@ -533,45 +492,9 @@ class MainWindow:
             if template_path is not None and os.path.exists(template_path) and self.template.path != template_path:
                 self.set_template(template_path)
 
-        if self.config is not None:
-            self.config2value()
-
-    def import_config(self, config, row_analysis):
-        self.seg_index = config["index"]
-        self.config[1-row_analysis]["position"] = config["position"]
-        self.config[1-row_analysis]["left_edge"] = config["left_edge"]
-        self.config[1-row_analysis]["right_edge"] = config["right_edge"]
-
-        self.config2value()
-        self.ui.statusbar.showMessage("模板边缘选择成功！")
-
-    def config2value(self):
-        self.ui.spinBox_position.setValue(self.config[0]["position"])
-        self.ui.spinBox_edge1.setValue(self.config[0]["left_edge"])
-        self.ui.spinBox_edge2.setValue(self.config[0]["right_edge"])
-        self.ui.spinBox_width.setValue(self.config[0]["width"])
-
-        self.ui.spinBox_position_2.setValue(self.config[1]["position"])
-        self.ui.spinBox_edge1_2.setValue(self.config[1]["left_edge"])
-        self.ui.spinBox_edge2_2.setValue(self.config[1]["right_edge"])
-        self.ui.spinBox_width_2.setValue(self.config[1]["width"])
-
-    def value2config(self):
-        config = {
-            "position": self.ui.spinBox_position.value(),
-            "left_edge": self.ui.spinBox_edge1.value(),
-            "right_edge": self.ui.spinBox_edge2.value(),
-            "width": self.ui.spinBox_width.value()
-        }
-
-        config_2 = {
-            "position": self.ui.spinBox_position_2.value(),
-            "left_edge": self.ui.spinBox_edge1_2.value(),
-            "right_edge": self.ui.spinBox_edge2_2.value(),
-            "width": self.ui.spinBox_width_2.value()
-        }
-
-        self.config = [config, config_2]
+    def import_config(self, config):
+        self.config = config
+        self.ui.statusbar.showMessage("ROI选择成功！")
 
     def quit(self):
         self.save_temp()

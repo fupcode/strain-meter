@@ -239,6 +239,39 @@ def one_dimensional_analysis(image, config, row_analysis):
     return distance, fig, details
 
 
+def keypoints_analysis(keypoints1, descriptors1, image2):
+    # 创建SIFT特征检测器
+    sift = cv2.SIFT_create(nfeatures=0, nOctaveLayers=3, contrastThreshold=0.005)
+
+    keypoints2, descriptors2 = sift.detectAndCompute(image2, None)
+
+    # 创建FLANN匹配器
+    flann = cv2.FlannBasedMatcher()
+    matches = flann.knnMatch(descriptors1, descriptors2, k=2)
+
+    # 提取良好的匹配
+    good_matches = []
+    for m, n in matches:
+        if m.distance < 0.7 * n.distance:
+            good_matches.append(m)
+
+    # 获取匹配点的坐标
+    points1 = np.float32([keypoints1[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+    points2 = np.float32([keypoints2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+
+    # 绘制特征点
+    keypoints2 = [keypoints2[m.trainIdx] for m in good_matches]
+    image2_with_keypoints = cv2.drawKeypoints(image2, keypoints2, None, flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+
+    # 计算仿射变换矩阵
+    transformation_matrix, _ = cv2.findHomography(points1, points2, cv2.RANSAC)
+    print(transformation_matrix)
+    square_sum = np.sum(transformation_matrix ** 2, axis=0)
+    Exx = np.sqrt(square_sum[0])
+    Eyy = np.sqrt(square_sum[1])
+    return Exx, Eyy, image2_with_keypoints
+
+
 class Sample:
     def __init__(self, image_path):
         self.raw_image = cv2_imread(image_path)
@@ -250,10 +283,9 @@ class Sample:
         self.matching_accuracy = None
         self.segmentation = []
 
-        self.width = ''
-        self.height = ''
-        self.fig = [None, None]
-        self.details = [None, None]
+        self.image_with_keypoints = None
+        self.Exx = ''
+        self.Eyy = ''
 
         name = os.path.basename(image_path)
         self.name = os.path.splitext(name)[0]
@@ -364,105 +396,24 @@ class Sample:
         self.segmentation = segmented_result
         return segmented_result
 
-    def mark_image(self, row_analysis, scale=4):
-        details = self.details[1 - row_analysis]
-        if details is None:
-            return self.cropped_image
+    def analysis(self, config):
+        region = config["ROI"]
+        ROI_image = self.crop_by_region(region)
 
-        image = self.cropped_image.copy()
+        keypoints = config["keypoints"]
+        descriptors = config["descriptors"]
 
-        # 将原始图像放大为四倍
-        half_scale = scale // 2
-        new_width = image.shape[1] * scale
-        new_height = image.shape[0] * scale
-        resized_image = cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_NEAREST)
+        Exx, Eyy, image_with_keypoints = keypoints_analysis(keypoints, descriptors, ROI_image)
 
-        # 标记
-        position = int(details["position"] * scale)
-        left_edge_x = int(details["left_edge_x"] * scale)
-        right_edge_x = int(details["right_edge_x"] * scale)
-        left_width = int(details["left_width"] * scale)
-        right_width = int(details["right_width"] * scale)
-
-        if row_analysis:
-            cv2.line(resized_image, (0, position), (new_width, position), (0, 0, 255), 1)
-            cv2.line(resized_image, (0, position + scale), (new_width, position + scale), (0, 0, 255), 1)
-
-            cv2.circle(resized_image, (left_edge_x + half_scale, position + half_scale), half_scale, (0, 255, 0), 1)
-            cv2.circle(resized_image, (right_edge_x + half_scale, position + half_scale), half_scale, (0, 255, 0), 1)
-
-            x_min = left_edge_x - 3 * left_width
-            x_max = right_edge_x + 3 * right_width
-            if x_min < 0:
-                x_min = 0
-            if x_max >= new_width:
-                x_max = new_width - 1
-
-            crop_width = x_max - x_min
-            crop_half_width = crop_width // 2
-
-            y_min = max(0, position - crop_half_width)
-            y_max = min(new_height, position + crop_half_width)
-
-            result = resized_image[y_min:y_max, x_min:x_max]
-
-        else:
-            cv2.line(resized_image, (position, 0), (position, new_height), (0, 0, 255), 1)
-            cv2.line(resized_image, (position + scale, 0), (position + scale, new_height), (0, 0, 255), 1)
-
-            cv2.circle(resized_image, (position + half_scale, left_edge_x + half_scale), half_scale, (0, 255, 0), 1)
-            cv2.circle(resized_image, (position + half_scale, right_edge_x + half_scale), half_scale, (0, 255, 0), 1)
-
-            y_min = left_edge_x - 3 * left_width
-            y_max = right_edge_x + 3 * right_width
-
-            if y_min < 0:
-                y_min = 0
-            if y_max >= new_height:
-                y_max = new_height - 1
-
-            crop_height = y_max - y_min
-            crop_half_height = crop_height // 2
-
-            x_min = max(0, position - crop_half_height)
-            x_max = min(new_width, position + crop_half_height)
-
-            result = resized_image[y_min:y_max, x_min:x_max]
-
-        return result
-
-    def analysis(self, config, row_analysis):
-        config = config[1 - row_analysis]
-        fig = None
-        details = None
-        length = "error"
-
-        try:
-            length, fig, details = one_dimensional_analysis(self.cropped_image, config, row_analysis)
-        except Exception as e:
-            print("RuntimeError:")
-            print(traceback.format_exc())
-
-        if row_analysis:
-            self.width = length
-            self.fig[0] = fig
-            self.details[0] = details
-        else:
-            self.height = length
-            self.fig[1] = fig
-            self.details[1] = details
-        return length
+        self.Exx = Exx
+        self.Eyy = Eyy
+        self.image_with_keypoints = image_with_keypoints
 
     def get_data(self):
-        if isinstance(self.width, str):
-            width = np.NAN
+        if self.Exx == '' or self.Eyy == '':
+            return np.nan, np.nan
         else:
-            width = self.width
-        if isinstance(self.height, str):
-            height = np.NAN
-        else:
-            height = self.height
-        return [self.short_name, width, height]
+            return self.Exx, self.Eyy
 
     def get_ROI_region(self, index):
         if index < len(self.segmentation):
