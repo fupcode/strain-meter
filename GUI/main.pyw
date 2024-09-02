@@ -54,18 +54,21 @@ class MainWindow:
 
         self.ui.tree.setColumnWidth(0, 192)
         self.ui.tree.setColumnWidth(1, 128)
-        self.ui.tree.setColumnWidth(2, 88)
+        self.ui.tree.setColumnWidth(2, 128)
         self.ui.tree.setColumnWidth(3, 88)
+        self.ui.tree.setColumnWidth(4, 88)
 
         self.ui.spinBox_position.setMaximum(999)
         self.ui.spinBox_edge1.setMaximum(999)
         self.ui.spinBox_edge2.setMaximum(999)
         self.ui.spinBox_width.setMaximum(999)
+        self.ui.spinBox_width_3.setMaximum(999)
 
         self.ui.spinBox_position_2.setMaximum(999)
         self.ui.spinBox_edge1_2.setMaximum(999)
         self.ui.spinBox_edge2_2.setMaximum(999)
         self.ui.spinBox_width_2.setMaximum(999)
+        self.ui.spinBox_width_4.setMaximum(999)
 
     def setup_callbacks(self):
         self.scene_sample.mousePressEvent = self.mousePressEventLoadSample
@@ -78,6 +81,9 @@ class MainWindow:
         self.ui.toolButton_del.clicked.connect(self.remove_sample)
         self.ui.pushButton_set_template.clicked.connect(self.change_template)
         self.ui.tree.itemSelectionChanged.connect(self.show_sample_and_figure)
+        self.ui.pushButton_manual_rotate.clicked.connect(self.manual_rotate)
+        self.ui.pushButton_auto_rotate.clicked.connect(self.auto_rotate)
+        self.ui.pushButton_all_rotate.clicked.connect(self.all_rotate)
 
         self.ui.actionNew.triggered.connect(self.new_project)
         self.ui.actionNew.setShortcut(QKeySequence("Ctrl+N"))
@@ -132,12 +138,19 @@ class MainWindow:
 
         left_edge_x = self.template.details[1 - self.row_analysis]["left_edge_x"]
         right_edge_x = self.template.details[1 - self.row_analysis]["right_edge_x"]
-        self.config[1 - self.row_analysis]["left_edge"] = left_edge_x
-        self.config[1 - self.row_analysis]["right_edge"] = right_edge_x
+        self.config[1 - self.row_analysis]["left_edge"] = round(left_edge_x)
+        self.config[1 - self.row_analysis]["right_edge"] = round(right_edge_x)
 
         for sample in self.samples:
-            sample.crop_by_template(self.template.cropped_image)
             sample.analysis(self.config, self.row_analysis)
+
+        left_edge_arrays = [sample.left_edge_array for sample in self.samples]
+        left_edge_arrays = np.vstack(left_edge_arrays)
+        np.save("temp/left_edge_registration.npy", left_edge_arrays)
+
+        right_edge_arrays = [sample.right_edge_array for sample in self.samples]
+        right_edge_arrays = np.vstack(right_edge_arrays)
+        np.save("temp/right_edge_registration.npy", right_edge_arrays)
 
         self.ui.statusbar.showMessage(f"样本批量分析结束")
 
@@ -146,15 +159,23 @@ class MainWindow:
 
     def export_data(self, mode=None):
         data = pd.DataFrame(columns=["name", "width", "height"])
-        _, template_width, template_height = self.template.get_data()
         for sample in self.samples:
             name, width, height = sample.get_data()
             data.loc[len(data.index)] = [name, width, height]
+
+        template_width = data["width"][0]
+        template_height = data["height"][0]
 
         # 将后三列设为最小有效数字
         data["εx"] = (data["width"] - template_width) / template_width
         data["εy"] = (data["height"] - template_height) / template_height
         data["v=-εy/εx"] = -data["εy"] / data["εx"]
+
+        # 格式化应变
+        data["legend"] = data["εx"].apply(lambda x: f"{x * 100:.2f}%")
+        for i in range(len(data)):
+            data.loc[i, "legend"] = fr"\l({i + 1}) " + data.loc[i, "legend"]
+
         for column in ["εx", "εy", "v=-εy/εx"]:
             data[column] = data[column].apply(lambda x: round(x, 6))
 
@@ -163,7 +184,7 @@ class MainWindow:
         if mode is None:
             return data
         if mode == "yingbian":
-            data = data.loc[:, ["name", "width", "εx"]]
+            data = data.loc[:, ["name", "width", "εx", "legend"]]
             file_name = "应变数据_" + self.template.name
         else:
             file_name = "泊松比数据_" + self.template.name
@@ -219,6 +240,25 @@ class MainWindow:
 
         self.show_sample_and_figure()
 
+    def manual_rotate(self):
+        angle = self.ui.doubleSpinBox_angle.value()
+        sample = self.current_sample()
+        if isinstance(sample, Sample):
+            sample.rotate_by_angle(angle)
+            sample.crop_by_template(self.template.raw_image)
+            self.update_sample_tree(remain=True)
+
+    def auto_rotate(self):
+        sample = self.current_sample()
+        if isinstance(sample, Sample):
+            sample.rotate_by_template(self.template.raw_image)
+            self.update_sample_tree(remain=True)
+
+    def all_rotate(self):
+        for sample in self.samples:
+            sample.rotate_by_template(self.template.raw_image)
+        self.update_sample_tree(remain=True)
+
     def mousePressEventLoadSample(self, event):
         if self.template is None and event.button() == Qt.LeftButton:
             self.openFileLoadSample()
@@ -233,7 +273,7 @@ class MainWindow:
         self.template.crop_by_self()
         self.template.segment()
         for sample in self.samples:
-            sample.crop_by_template(self.template.cropped_image)
+            sample.crop_by_template(self.template.raw_image)
 
         self.ui.pushButton_template.setEnabled(True)
         self.ui.pushButton_analysis.setEnabled(True)
@@ -261,7 +301,7 @@ class MainWindow:
         for image_path in image_paths:
             sample = Sample(image_path)
             self.samples.append(sample)
-            sample.crop_by_template(self.template.cropped_image)
+            sample.crop_by_template(self.template.raw_image)
 
         self.give_short_name()
         self.update_sample_tree()
@@ -283,26 +323,38 @@ class MainWindow:
         if sample is None:
             self.ui.pushButton_set_template.setEnabled(False)
             self.ui.toolButton_del.setEnabled(False)
+            self.ui.groupBox_rotate.setEnabled(False)
             return
         elif sample == "应变":
             self.ui.pushButton_set_template.setEnabled(False)
             self.ui.toolButton_del.setEnabled(False)
+            self.ui.groupBox_rotate.setEnabled(False)
             self.plot_yingbian()
             return
         elif sample == "泊松比":
             self.ui.pushButton_set_template.setEnabled(False)
             self.ui.toolButton_del.setEnabled(False)
+            self.ui.groupBox_rotate.setEnabled(False)
             self.plot_bosong()
             return
 
         elif sample.name == self.template.name:
             self.ui.pushButton_set_template.setEnabled(False)
             self.ui.toolButton_del.setEnabled(False)
+            self.ui.groupBox_rotate.setEnabled(False)
             title = sample.short_name + " (模板)"
 
         else:
             self.ui.pushButton_set_template.setEnabled(True)
             self.ui.toolButton_del.setEnabled(True)
+            self.ui.groupBox_rotate.setEnabled(True)
+
+            angle = sample.angle
+            if angle:
+                self.ui.doubleSpinBox_angle.setValue(float(angle[:-1]))
+            else:
+                self.ui.doubleSpinBox_angle.setValue(0)
+
             title = sample.short_name
 
         self.show_sample(sample)
@@ -314,9 +366,16 @@ class MainWindow:
     def remove_sample(self, button):
         sample = self.current_sample()
         self.samples.remove(sample)
-        self.update_sample_tree()
+        second_item = self.ui.tree.topLevelItem(1)  # 假设第二个节点的索引为 1
+        index = second_item.indexOfChild(self.ui.tree.currentItem())
+        second_item.takeChild(index)
 
-    def update_sample_tree(self):
+        # 设置当前元素
+        if index > 0:
+            self.ui.tree.setCurrentItem(second_item.child(index - 1))
+
+    def update_sample_tree(self, remain=False):
+        current_sample = self.current_sample()
         first_item = self.ui.tree.topLevelItem(0)
         for i in range(first_item.childCount()):
             child = first_item.takeChild(0)  # 从第一个节点中取出第一个子节点，直到没有子节点为止
@@ -325,7 +384,9 @@ class MainWindow:
             template_item = QTreeWidgetItem()
             template_item.setText(0, self.template.short_name)
             first_item.addChild(template_item)
-            self.ui.tree.setCurrentItem(template_item)
+
+            if not remain:
+                self.ui.tree.setCurrentItem(template_item)
 
         # 清空第二个节点下的所有子节点
         second_item = self.ui.tree.topLevelItem(1)  # 假设第二个节点的索引为 1
@@ -337,19 +398,27 @@ class MainWindow:
         for sample in self.samples:
             sample_item = QTreeWidgetItem()
             sample_item.setText(0, sample.short_name)
-            sample_item.setText(1, sample.matching_accuracy)
+            sample_item.setText(1, sample.angle)
+            sample_item.setText(2, sample.matching_accuracy)
 
             if not isinstance(sample.width, str):
-                width = f"{sample.width:.1f}"
+                width = f"{sample.width:.1f}" + " "
             else:
                 width = sample.width
             if not isinstance(sample.height, str):
-                height = f"{sample.height:.1f}"
+                height = f"{sample.height:.1f}" + " "
             else:
                 height = sample.height
-            sample_item.setText(2, width)
-            sample_item.setText(3, height)
+            sample_item.setText(3, width)
+            sample_item.setText(4, height)
+
+            sample_item.setTextAlignment(1, 0x0002)
+            sample_item.setTextAlignment(2, 0x0002)
+
             second_item.addChild(sample_item)
+
+            if remain and current_sample == sample:
+                self.ui.tree.setCurrentItem(sample_item)
 
         self.ui.tree.expandAll()
 
@@ -429,9 +498,10 @@ class MainWindow:
             ax = fig.add_subplot(111)  # 添加子图
             ax.set_ylim(0, 255)
             ax.set_xlim(0, 100)
-            ax.set_title('Red Channel Analysis')
+            ax.set_title('Gray Scale Analysis')
             ax.set_xlabel('Pixel')
-            ax.set_ylabel('Red Value')
+            ax.set_ylabel('Gray Scale Value')
+
             ax.spines['top'].set_visible(False)  # 去掉绘图时上面的横线
             ax.spines['right'].set_visible(False)  # 去掉绘图时右面的横线
 
@@ -451,8 +521,6 @@ class MainWindow:
         ax.set_title('Strain Data')
         ax.set_xlabel('Sample')
         ax.set_ylabel('Strain (%)')
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
 
         data = self.export_data()
 
@@ -467,8 +535,6 @@ class MainWindow:
         ax.set_xlabel('width')
         ax.set_ylabel('height')
         ax.set_title('Poisson Ratio')
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
 
         data = self.export_data()
         width = np.array(data["width"]).reshape(-1, 1)
@@ -529,7 +595,7 @@ class MainWindow:
         filter_sample_paths = [path for path in sample_paths if os.path.exists(path)]
 
         if filter_sample_paths:
-            self.import_sample(sample_paths)
+            self.import_sample(filter_sample_paths)
             if template_path is not None and os.path.exists(template_path) and self.template.path != template_path:
                 self.set_template(template_path)
 
@@ -542,6 +608,13 @@ class MainWindow:
         self.config[1-row_analysis]["left_edge"] = config["left_edge"]
         self.config[1-row_analysis]["right_edge"] = config["right_edge"]
 
+        ROI_image = config["ROI_image"]
+        ROI_region = config["ROI_region"]
+        self.template.ROI = ROI_image
+
+        for sample in self.samples:
+            sample.crop_ROI(ROI_image, ROI_region)
+
         self.config2value()
         self.ui.statusbar.showMessage("模板边缘选择成功！")
 
@@ -550,25 +623,29 @@ class MainWindow:
         self.ui.spinBox_edge1.setValue(self.config[0]["left_edge"])
         self.ui.spinBox_edge2.setValue(self.config[0]["right_edge"])
         self.ui.spinBox_width.setValue(self.config[0]["width"])
+        self.ui.spinBox_width_3.setValue(self.config[0]["expand_width"])
 
         self.ui.spinBox_position_2.setValue(self.config[1]["position"])
         self.ui.spinBox_edge1_2.setValue(self.config[1]["left_edge"])
         self.ui.spinBox_edge2_2.setValue(self.config[1]["right_edge"])
         self.ui.spinBox_width_2.setValue(self.config[1]["width"])
+        self.ui.spinBox_width_4.setValue(self.config[1]["expand_width"])
 
     def value2config(self):
         config = {
             "position": self.ui.spinBox_position.value(),
             "left_edge": self.ui.spinBox_edge1.value(),
             "right_edge": self.ui.spinBox_edge2.value(),
-            "width": self.ui.spinBox_width.value()
+            "width": self.ui.spinBox_width.value(),
+            "expand_width": self.ui.spinBox_width_3.value()
         }
 
         config_2 = {
             "position": self.ui.spinBox_position_2.value(),
             "left_edge": self.ui.spinBox_edge1_2.value(),
             "right_edge": self.ui.spinBox_edge2_2.value(),
-            "width": self.ui.spinBox_width_2.value()
+            "width": self.ui.spinBox_width_2.value(),
+            "expand_width": self.ui.spinBox_width_4.value()
         }
 
         self.config = [config, config_2]

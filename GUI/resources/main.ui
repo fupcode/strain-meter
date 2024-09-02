@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1097</width>
+    <width>1223</width>
     <height>920</height>
    </rect>
   </property>
@@ -20,9 +20,9 @@
    <string>MainWindow</string>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <layout class="QHBoxLayout" name="horizontalLayout_8">
+   <layout class="QHBoxLayout" name="horizontalLayout_15">
     <item>
-     <layout class="QVBoxLayout" name="verticalLayout_2">
+     <layout class="QVBoxLayout" name="verticalLayout_5">
       <item>
        <layout class="QHBoxLayout" name="horizontalLayout_7">
         <property name="spacing">
@@ -117,7 +117,7 @@
         </property>
         <property name="minimumSize">
          <size>
-          <width>540</width>
+          <width>666</width>
           <height>0</height>
          </size>
         </property>
@@ -125,25 +125,48 @@
          <property name="text">
           <string>项目文件</string>
          </property>
+         <property name="textAlignment">
+          <set>AlignLeading|AlignVCenter</set>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>旋转角度</string>
+         </property>
+         <property name="textAlignment">
+          <set>AlignCenter</set>
+         </property>
         </column>
         <column>
          <property name="text">
           <string>匹配准确度</string>
+         </property>
+         <property name="textAlignment">
+          <set>AlignCenter</set>
          </property>
         </column>
         <column>
          <property name="text">
           <string>宽</string>
          </property>
+         <property name="textAlignment">
+          <set>AlignCenter</set>
+         </property>
         </column>
         <column>
          <property name="text">
           <string>高</string>
          </property>
+         <property name="textAlignment">
+          <set>AlignCenter</set>
+         </property>
         </column>
         <item>
          <property name="text">
           <string>模板</string>
+         </property>
+         <property name="text">
+          <string/>
          </property>
          <property name="text">
           <string/>
@@ -168,26 +191,65 @@
          <property name="text">
           <string/>
          </property>
+         <property name="text">
+          <string/>
+         </property>
         </item>
         <item>
          <property name="text">
           <string>数据</string>
          </property>
+         <property name="text">
+          <string/>
+         </property>
+         <property name="text">
+          <string/>
+         </property>
+         <property name="text">
+          <string/>
+         </property>
+         <property name="text">
+          <string/>
+         </property>
          <item>
           <property name="text">
            <string>应变</string>
+          </property>
+          <property name="text">
+           <string/>
+          </property>
+          <property name="text">
+           <string/>
+          </property>
+          <property name="text">
+           <string/>
+          </property>
+          <property name="text">
+           <string/>
           </property>
          </item>
          <item>
           <property name="text">
            <string>泊松比</string>
           </property>
+          <property name="text">
+           <string/>
+          </property>
+          <property name="text">
+           <string/>
+          </property>
+          <property name="text">
+           <string/>
+          </property>
+          <property name="text">
+           <string/>
+          </property>
          </item>
         </item>
        </widget>
       </item>
       <item>
-       <layout class="QHBoxLayout" name="horizontalLayout_5">
+       <layout class="QHBoxLayout" name="horizontalLayout_8">
         <item>
          <widget class="QGroupBox" name="groupBox_row">
           <property name="sizePolicy">
@@ -275,12 +337,30 @@
              <item>
               <widget class="QLabel" name="label_width">
                <property name="text">
-                <string>半宽度：</string>
+                <string>边缘半宽度：</string>
                </property>
               </widget>
              </item>
              <item>
               <widget class="QSpinBox" name="spinBox_width">
+               <property name="value">
+                <number>5</number>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+           <item>
+            <layout class="QHBoxLayout" name="horizontalLayout_5">
+             <item>
+              <widget class="QLabel" name="label_width_3">
+               <property name="text">
+                <string>扩展宽度：</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QSpinBox" name="spinBox_width_3">
                <property name="value">
                 <number>5</number>
                </property>
@@ -381,7 +461,7 @@
              <item>
               <widget class="QLabel" name="label_width_2">
                <property name="text">
-                <string>半宽度：</string>
+                <string>边缘半宽度：</string>
                </property>
               </widget>
              </item>
@@ -393,6 +473,74 @@
               </widget>
              </item>
             </layout>
+           </item>
+           <item>
+            <layout class="QHBoxLayout" name="horizontalLayout_14">
+             <item>
+              <widget class="QLabel" name="label_width_4">
+               <property name="text">
+                <string>扩展宽度：</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QSpinBox" name="spinBox_width_4">
+               <property name="value">
+                <number>5</number>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+          </layout>
+         </widget>
+        </item>
+        <item>
+         <widget class="QGroupBox" name="groupBox_rotate">
+          <property name="title">
+           <string>旋转</string>
+          </property>
+          <layout class="QVBoxLayout" name="verticalLayout_2">
+           <property name="spacing">
+            <number>12</number>
+           </property>
+           <item>
+            <widget class="QLabel" name="label">
+             <property name="text">
+              <string>旋转角度：</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QDoubleSpinBox" name="doubleSpinBox_angle">
+             <property name="minimum">
+              <double>-99.989999999999995</double>
+             </property>
+             <property name="singleStep">
+              <double>0.010000000000000</double>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="pushButton_manual_rotate">
+             <property name="text">
+              <string>手动旋转</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="pushButton_auto_rotate">
+             <property name="text">
+              <string>自动旋转</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="pushButton_all_rotate">
+             <property name="text">
+              <string>全部自动旋转</string>
+             </property>
+            </widget>
            </item>
           </layout>
          </widget>
@@ -512,7 +660,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1097</width>
+     <width>1223</width>
      <height>22</height>
     </rect>
    </property>

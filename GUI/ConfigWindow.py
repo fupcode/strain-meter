@@ -211,19 +211,24 @@ class ImageViewer(QGraphicsView):
         return relative_x, relative_y
 
     def return_config(self):
+        image = self.segmentations[self.index]["image"]
         start = self.segmentations[self.index]["start"]
+        height, width, _ = image.shape
+        region = (start[0], start[1], width, height)
 
-        x1 = self.previous_selected_pixel.x // self.pixel_scale + start[0]
-        y1 = self.previous_selected_pixel.y // self.pixel_scale + start[1]
-        x2 = self.selected_pixel.x // self.pixel_scale + start[0]
-        y2 = self.selected_pixel.y // self.pixel_scale + start[1]
+        x1 = self.previous_selected_pixel.x // self.pixel_scale
+        y1 = self.previous_selected_pixel.y // self.pixel_scale
+        x2 = self.selected_pixel.x // self.pixel_scale
+        y2 = self.selected_pixel.y // self.pixel_scale
 
         if self.row_analysis:
             config = {
                 "index": self.index,
                 "position": y1,
                 "left_edge": x1,
-                "right_edge": x2
+                "right_edge": x2,
+                "ROI_image": image,
+                "ROI_region": region
             }
 
         else:
@@ -231,7 +236,9 @@ class ImageViewer(QGraphicsView):
                 "index": self.index,
                 "position": x1,
                 "left_edge": y1,
-                "right_edge": y2
+                "right_edge": y2,
+                "ROI_image": image,
+                "ROI_region": region
             }
 
         return config
