@@ -71,7 +71,7 @@ python GUI/main.pyw
 点击右侧的加号图标，选择你希望分析的图像文件（支持批量选择）。  
 选中后，界面将呈现如下所示的视图：
 
-![tmpC14E](assets\tmpC14E.png)
+![tmpC14E](assets/tmpC14E.png)
 
 可点击左上方小加号继续添加图像，或选中样品点减号删去指定图像。
 
