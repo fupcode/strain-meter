@@ -20,7 +20,7 @@ $$G_{\text{edge}} = \frac{G_{\text{max}} + G_{\text{min}}}{2}$$
 \
 $$\varepsilon = \frac{\Delta L}{L_0}$$
 \
-其中，$L_0$ 为初始长度，$\Delta L$ 为变形后的长度增量。
+其中， $L_0$ 为初始长度， $\Delta L$ 为变形后的长度增量。
 
 # Strain Meter 使用方法
 
