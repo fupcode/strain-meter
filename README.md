@@ -52,11 +52,11 @@ python GUI/main.pyw
 
 ### 方法二：使用 Release 可执行版本
 
-1. 访问项目Release地址：[https://github.com/fupcode/strain-meter](https://github.com/fupcode/strain-meter/)
+1. 访问项目[Release页面](https://github.com/fupcode/strain-meter/releases)
 
-2. 点击右侧的 **"Releases"** 标签页，下载最新版本的压缩包。
+2. 下载最新版本的压缩包。
 
-3. 解压后双击运行 Strain Meter 主程序，无需安装 Python 和依赖。
+3. 解压后双击运行 Strain Meter exe主程序，无需安装 Python 和依赖。
 
 ---
 
