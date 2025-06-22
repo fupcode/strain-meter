@@ -1,5 +1,5 @@
 import matplotlib.pyplot as plt
-import fpc.pyplot_template
+import pyplot_template
 import cv2
 import numpy as np
 import os

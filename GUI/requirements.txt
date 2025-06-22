@@ -1,0 +1,6 @@
+PySide2
+matplotlib
+scikit-learn
+numpy
+pandas
+opencv-python

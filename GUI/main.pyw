@@ -9,7 +9,7 @@ import matplotlib
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
-import fpc.pyplot_template
+import pyplot_template
 import numpy as np
 import pandas as pd
 import cv2
